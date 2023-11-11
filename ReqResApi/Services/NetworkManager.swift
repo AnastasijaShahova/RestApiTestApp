@@ -6,26 +6,7 @@
 //
 
 import Foundation
-
-enum NetworkError: Error {
-    case decodingError
-    case noData
-    case noUsers
-    case deletingError
-    
-    var title: String {
-        switch self {
-            case .decodingError:
-                return "Cant decode received data"
-            case .noData:
-                return "Cant fetch data at all"
-            case .noUsers:
-                return "No users got from Api"
-            case .deletingError:
-                return "Cant delete user "
-        }
-    }
-}
+import Alamofire
 
 final class NetworkManager {
     
@@ -33,103 +14,60 @@ final class NetworkManager {
     
     private init() {}
     
-    func fetchAvatar(from url: URL, completion: @escaping(Data) -> ()) {
+    func fetchUsers(completion: @escaping(Result<[User], AFError>) -> ()) {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
         
-        DispatchQueue.global().async {
-            guard let imageData = try? Data(contentsOf: url) else { return }
-            
-            DispatchQueue.main.async {
-                completion(imageData)
+        AF.request(Link.allUsers.url).validate().responseDecodable(of: UsersQuery.self, decoder: decoder) { dataResponse in
+            switch dataResponse.result {
+                case .success(let userQuery):
+                    completion(.success(userQuery.data))
+                case .failure(let error):
+                    completion(.failure(error))
             }
         }
     }
     
-    func fetchUsers(completion: @escaping(Result<[User], NetworkError>) -> ()) {
-        URLSession.shared.dataTask(with: Link.allUsers.url) { data, response, error in
-            guard let data = data, let response = response as? HTTPURLResponse else {
-                print(error?.localizedDescription ?? "No error")
-                sendFailure(with: .noData)
-                return
-            }
-            
-            if (200...299).contains(response.statusCode) {
-                let decoder = JSONDecoder()
-                decoder.keyDecodingStrategy = .convertFromSnakeCase
-                
-                do {
-                    let usersQuery = try decoder.decode(UsersQuery.self, from: data)
-                    DispatchQueue.main.async {
-                        if usersQuery.data.count == 0 {
-                            sendFailure(with: .noUsers)
-                            return
-                        }
-                        completion(.success(usersQuery.data))
-                    }
-                   
-                } catch {
-                    sendFailure(with: .decodingError)
-                }
+    func postUser(_ user: User, completion: @escaping(Result<PostUserQuery, AFError>) -> ()) {
 
-            }
-            
-            func sendFailure(with error: NetworkError) {
-                DispatchQueue.main.async {
-                    completion(.failure(error))
-                }
-            }
-                               
-        }.resume()
-    }
-    
-    func postUser(_ user: User, completion: @escaping(Result<PostUserQuery, NetworkError>) -> ()) {
-        var request = URLRequest(url: Link.singleUser.url)
-        request.httpMethod = "POST"
-        request.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
+        let postUserParametrs = PostUserQuery(firstName: user.firstName, lastName: user.lastName)
         
-        let userQuery = PostUserQuery(firstName: user.firstName, lastName: user.lastName)
-        
-        let jsonData = try? JSONEncoder().encode(userQuery)
-        request.httpBody = jsonData
-        
-        URLSession.shared.dataTask(with: request) { data, _, error in
-            guard let data = data else { return  }
-            
-            if let postUserQuery = try? JSONDecoder().decode(PostUserQuery.self, from: data) {
-                DispatchQueue.main.async {
+        AF.request(Link.singleUser.url, method: .post, parameters: postUserParametrs).validate().responseDecodable(of: PostUserQuery.self) { dataResponse in
+            switch dataResponse.result {
+                case .success(let postUserQuery):
                     completion(.success(postUserQuery))
-                }
-            } else {
-                completion(.failure(.decodingError))
+                case .failure(let error):
+                    completion(.failure(error))
             }
-        }.resume()
+        }
     }
     
     func deleteUserWith(_ id: Int, completion: @escaping(Bool) -> ()) {
         let userURL = Link.singleUser.url.appendingPathComponent("\(id)")
-        var request = URLRequest(url: userURL)
-        request.httpMethod = "DELETE"
-        URLSession.shared.dataTask(with: request) { _, response, error in
-            if let response = response as? HTTPURLResponse {
-                DispatchQueue.main.async {
-                    completion(response.statusCode == 204)
-                }
+        
+        AF.request(userURL, method: .delete).validate(statusCode: [204]).response { dataResponse in
+            switch dataResponse.result {
+                case .success( _):
+                    completion(true)
+                case .failure(_):
+                    completion(false)
             }
-        }.resume()
+        }
     }
     
-    func deleteUserWith(_ id: Int) async throws -> Bool {
-        let userURL = Link.singleUser.url.appendingPathComponent("\(id)")
-        var request = URLRequest(url: userURL)
-        request.httpMethod = "DELETE"
-        
-        let (_, response) =  try await URLSession.shared.data(for: request)
-        
-        if let response = response as? HTTPURLResponse {
-            return response.statusCode == 204
-        }
-        
-        return false
-    }
+//    func deleteUserWith(_ id: Int) async throws -> Bool {
+//        let userURL = Link.singleUser.url.appendingPathComponent("\(id)")
+//        var request = URLRequest(url: userURL)
+//        request.httpMethod = "DELETE"
+//
+//        let (_, response) =  try await URLSession.shared.data(for: request)
+//
+//        if let response = response as? HTTPURLResponse {
+//            return response.statusCode == 204
+//        }
+//
+//        return false
+//    }
 }
 
 // MARK: - Link

@@ -7,6 +7,7 @@
 
 import Foundation
 import UIKit
+import Alamofire
 
 protocol NewUserViewControllerDelegate {
     func createUser(user: User)
@@ -41,8 +42,8 @@ final class UsersListViewController: UITableViewController {
         }
     }
     
-    private func showAlert(withError networkError: NetworkError) {
-        let alert = UIAlertController(title: networkError.title, message: nil, preferredStyle: .alert)
+    private func showAlert(withError networkError: AFError) {
+        let alert = UIAlertController(title: networkError.localizedDescription, message: nil, preferredStyle: .alert)
         
         let okAction = UIAlertAction(title: "OK", style: .default)
         alert.addAction(okAction)
@@ -95,23 +96,23 @@ extension UsersListViewController {
     }
     
     private func delete(id: Int, indexPath: IndexPath) {
-//        networkManager.deleteUserWith(id) { [weak self] result  in
-//            if result {
-//                self?.users.remove(at: indexPath.row)
-//                self?.tableView.deleteRows(at: [indexPath], with: .automatic)
-//            } else {
-//                self?.showAlert(withError: .deletingError)
-//            }
-//        }
-        
-        Task {
-            if try await networkManager.deleteUserWith(id) {
-                users.remove(at: indexPath.row)
-                tableView.deleteRows(at: [indexPath], with: .automatic)
+        networkManager.deleteUserWith(id) { [weak self] result  in
+            if result {
+                self?.users.remove(at: indexPath.row)
+                self?.tableView.deleteRows(at: [indexPath], with: .automatic)
             } else {
-                showAlert(withError: .deletingError)
+                self?.showAlert(withError: .explicitlyCancelled)
             }
         }
+        
+//        Task {
+//            if try await networkManager.deleteUserWith(id) {
+//                users.remove(at: indexPath.row)
+//                tableView.deleteRows(at: [indexPath], with: .automatic)
+//            } else {
+//                showAlert(withError: .deletingError)
+//            }
+//        }
     }
 }
 
